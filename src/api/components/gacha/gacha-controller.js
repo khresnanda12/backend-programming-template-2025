@@ -1,34 +1,54 @@
 const gachaService = require('./gacha-service');
 
-async function play(req, res) {
+async function playGacha(req, res, next) {
   try {
-    console.log('--> Data request masuk dari EchoAPI:', req.body);
+    const { email, fullName } = req.body;
+    if (!email || !fullName) {
+      return res.status(400).json({ message: 'Email & Nama wajib isi' });
+    }
 
-    // Amankan kalau body dari Echo API ternyata kosong
-    const email = req.body?.email;
-
-    if (!email) {
+    const result = await gachaService.playGacha(email, fullName);
+    return res.status(200).json({ success: true, message: result });
+  } catch (err) {
+    if (err.message === 'LIMIT_REACHED') {
       return res
-        .status(400)
-        .json({ error: 'Email belum diisi di tab Body Echo API!' });
+        .status(403)
+        .json({ success: false, message: 'Jatah harian habis' });
     }
-
-    const result = await gachaService.playGacha(email);
-
-    // Kalau limit habis, sesuai syarat kuis harus return error
-    if (result.isLimit) {
-      return res.status(403).json(result);
-    }
-
-    return res.status(200).json(result);
-  } catch (error) {
-    console.error('--> WADUH CRASH:', error.message);
-    // Kita TAMPILKAN error aslinya langsung ke Echo API!
-    return res.status(500).json({
-      pesan: 'Server Error',
-      ALASAN_ASLI: error.message,
-    });
+    next(err);
   }
 }
 
-module.exports = { play };
+async function getHistory(req, res, next) {
+  try {
+    const data = await gachaService.getHistory(req.query.email);
+    res.status(200).json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getQuotas(req, res, next) {
+  try {
+    const data = await gachaService.getQuotas();
+    res.status(200).json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getWinners(req, res, next) {
+  try {
+    const data = await gachaService.getMaskedWinners();
+    res.status(200).json(data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  playGacha,
+  getHistory,
+  getQuotas,
+  getWinners,
+};

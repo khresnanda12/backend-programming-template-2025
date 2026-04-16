@@ -1,50 +1,47 @@
 const gachaRepository = require('./gacha-repository');
 
-async function playGacha(email) {
-  // Format tanggal YYYY-MM-DD
+async function playGacha(email, fullName) {
   const today = new Date().toISOString().split('T')[0];
 
-  // 1. Cek kuota
-  const history = await gachaRepository.getUserHistoryToday(email, today);
-  if (history && history.playCount >= 5) {
-    return {
-      success: false,
-      isLimit: true,
-      message: 'Limit Gacha Harian Habis (Maksimal 5x)',
-    };
+  const attempts = await gachaRepository.countDailyAttempts(email, today);
+  if (attempts >= 5) throw new Error('LIMIT_REACHED');
+
+  const isWin = Math.random() < 0.3;
+  let wonPrize = null;
+
+  if (isWin) {
+    const prizes = await gachaRepository.getAvailablePrizes();
+    if (prizes.length > 0) {
+      const randomPrize = prizes[Math.floor(Math.random() * prizes.length)];
+      wonPrize = await gachaRepository.claimPrize(randomPrize._id);
+    }
   }
 
-  // 2. Tambah hitungan main
-  await gachaRepository.incrementUserPlayCount(email, today);
+  await gachaRepository.createRecord({
+    email,
+    fullName,
+    dateString: today,
+    isWin: !!wonPrize,
+    prizeName: wonPrize ? wonPrize.name : null,
+  });
 
-  // 3. Logic Gacha (40% menang)
-  const isWin = Math.random() < 0.4;
-  if (!isWin) {
-    return { success: true, message: 'Zonk! Kamu tidak dapat hadiah.' };
-  }
-
-  // 4. Cari hadiah
-  const availablePrizes = await gachaRepository.getAvailablePrizes();
-  if (availablePrizes.length === 0) {
-    return {
-      success: true,
-      message: 'Menang! Tapi sayang kuota semua hadiah sudah habis.',
-    };
-  }
-
-  // 5. Pilih hadiah random
-  const randomIndex = Math.floor(Math.random() * availablePrizes.length);
-  const selectedPrize = availablePrizes[randomIndex];
-
-  const claimResult = await gachaRepository.claimPrize(selectedPrize._id);
-  if (!claimResult) {
-    return {
-      success: false,
-      message: 'Gagal klaim, hadiah direbut orang lain.',
-    };
-  }
-
-  return { success: true, message: `Hore! Kamu dapat: ${claimResult.name}` };
+  return wonPrize ? `Menang ${wonPrize.name}` : 'Zonk';
 }
 
-module.exports = { playGacha };
+async function getMaskedWinners() {
+  const winners = await gachaRepository.getAllWinners();
+  return winners.map((w) => ({
+    prize: w.prizeName,
+    name:
+      w.fullName.length > 2
+        ? `${w.fullName[0]}****${w.fullName.slice(-2)}`
+        : `${w.fullName}****`,
+  }));
+}
+
+module.exports = {
+  playGacha,
+  getMaskedWinners,
+  getHistory: gachaRepository.getHistoryByEmail,
+  getQuotas: gachaRepository.getPrizeQuotas,
+};
